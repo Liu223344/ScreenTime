@@ -21,8 +21,8 @@ public sealed class AppLogger
     /// </summary>
     public static AppLogger Instance => _instance ??= new AppLogger();
 
-    private readonly StreamWriter? _writer;
-    private readonly DateTime _logDate;
+    private StreamWriter? _writer;
+    private DateTime _logDate;
 
     public AppLogger()
     {
@@ -53,7 +53,8 @@ public sealed class AppLogger
             if (DateTime.Today != _logDate && _writer != null)
             {
                 _writer.Dispose();
-                _writer = OpenWriter(DateTime.Today);
+                _logDate = DateTime.Today;
+                _writer = OpenWriter(_logDate);
             }
 
             try
