@@ -7,6 +7,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using H.NotifyIcon;
+using H.NotifyIcon.Core;
 using ScreenTime.Data;
 using ScreenTime.Services;
 
@@ -99,7 +100,15 @@ public sealed class TrayIconManager : IDisposable
     {
         Application.Current?.Dispatcher.Invoke(() =>
         {
-            _icon?.ShowNotification("该休息啦", message);
+            // H.NotifyIcon.Wpf v2.1.3: ShowNotification(title, message, NotificationIcon icon, ...)
+            try
+            {
+                _icon?.ShowNotification("该休息啦", message, NotificationIcon.Info);
+            }
+            catch
+            {
+                // 通知失败不应影响后台运行
+            }
         });
     }
 

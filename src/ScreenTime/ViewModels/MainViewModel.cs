@@ -232,42 +232,115 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     // ---------- 图表构建 ----------
+    // 配色采用 Apple 系统色:#007AFF (蓝) / #FF9500 (橙) / #AF52DE (紫) / #34C759 (绿) / #FF3B30 (红) / #5AC8FA (青)
+    // 文字色:#1D1D1F (主) / #6E6E73 (次) / #A1A1A6 (三)
+    private static readonly OxyColor AppleBlue = OxyColor.FromRgb(0x00, 0x7A, 0xFF);
+    private static readonly OxyColor AppleOrange = OxyColor.FromRgb(0xFF, 0x95, 0x00);
+    private static readonly OxyColor AppleGreen = OxyColor.FromRgb(0x34, 0xC7, 0x59);
+    private static readonly OxyColor AppleRed = OxyColor.FromRgb(0xFF, 0x3B, 0x30);
+    private static readonly OxyColor AppleTeal = OxyColor.FromRgb(0x5A, 0xC8, 0xFA);
+    private static readonly OxyColor ApplePurple = OxyColor.FromRgb(0xAF, 0x52, 0xDE);
+    private static readonly OxyColor ApplePink = OxyColor.FromRgb(0xFF, 0x2D, 0x55);
+    private static readonly OxyColor AppleTextPrimary = OxyColor.FromRgb(0x1D, 0x1D, 0x1F);
+    private static readonly OxyColor AppleTextSecondary = OxyColor.FromRgb(0x6E, 0x6E, 0x73);
+    private static readonly OxyColor AppleTextTertiary = OxyColor.FromRgb(0xA1, 0xA1, 0xA6);
+    private static readonly OxyColor AppleHairline = OxyColor.FromRgb(0xE5, 0xE5, 0xEA);
+    private static readonly OxyColor AppleChartBg = OxyColors.White;
+
+    /// <summary>
+    /// 应用统一的 Apple 风格 axis 样式到 PlotModel。
+    /// </summary>
+    private static void ApplyAppleTheme(PlotModel model)
+    {
+        model.Background = AppleChartBg;
+        model.PlotAreaBackground = AppleChartBg;
+        model.TextColor = AppleTextPrimary;
+        model.TitleColor = AppleTextPrimary;
+        model.SubtitleColor = AppleTextSecondary;
+        model.LegendTextColor = AppleTextPrimary;
+        model.LegendBorderColor = AppleHairline;
+        model.PlotAreaBorderColor = AppleHairline;
+        model.PlotAreaBorderThickness = new OxyThickness(0, 0, 0, 1); // 仅底部细线
+    }
+
+    private static LinearAxis MakeAppleLinearAxis(AxisPosition pos, string? title = null, string? unit = null)
+    {
+        var axis = new LinearAxis
+        {
+            Position = pos,
+            Title = title,
+            TitleColor = AppleTextSecondary,
+            TitleFontSize = 11,
+            TitleFontWeight = FontWeights.Normal,
+            TextColor = AppleTextTertiary,
+            FontSize = 11,
+            MajorGridlineStyle = pos == AxisPosition.Left ? LineStyle.Solid : LineStyle.None,
+            MajorGridlineColor = AppleHairline,
+            MajorGridlineThickness = 0.6,
+            MinorGridlineStyle = LineStyle.None,
+            TickStyle = TickStyle.None,
+            AxislineStyle = pos == AxisPosition.Bottom ? LineStyle.Solid : LineStyle.None,
+            AxislineColor = AppleHairline,
+            AxislineThickness = 1,
+            Minimum = 0,
+        };
+        if (!string.IsNullOrEmpty(unit))
+        {
+            axis.StringFormat = "0";
+            axis.Title = string.IsNullOrEmpty(title) ? unit : $"{title} ({unit})";
+        }
+        return axis;
+    }
+
+    private static CategoryAxis MakeAppleCategoryAxis(AxisPosition pos, IEnumerable<string> labels)
+    {
+        var axis = new CategoryAxis
+        {
+            Position = pos,
+            TextColor = AppleTextTertiary,
+            FontSize = 11,
+            TickStyle = TickStyle.None,
+            MajorStep = 1,
+            MinorStep = 1,
+            AxislineStyle = pos == AxisPosition.Bottom ? LineStyle.Solid : LineStyle.None,
+            AxislineColor = AppleHairline,
+            AxislineThickness = 1,
+            MajorGridlineStyle = LineStyle.None,
+            MinorGridlineStyle = LineStyle.None,
+            GapWidth = 6,
+        };
+        foreach (var lbl in labels) axis.Labels.Add(lbl);
+        return axis;
+    }
 
     private PlotModel BuildHourlyChart(string date)
     {
         var hourly = _repo.GetHourlyActive(date);
 
-        var model = new PlotModel { Title = "今日各小时活跃时长", TitleFontSize = 14 };
+        var model = new PlotModel { Title = null };
+        ApplyAppleTheme(model);
+
         var series = new ColumnSeries
         {
-            FillColor = OxyColors.SteelBlue,
-            StrokeColor = OxyColors.SteelBlue,
+            FillColor = AppleBlue,
+            StrokeColor = AppleBlue,
+            StrokeThickness = 0,
+            ColumnWidth = 14,
+            GapWidth = 6,
         };
         for (int i = 0; i < 24; i++)
         {
-            // 转换为分钟显示更直观
-            series.Items.Add(new ColumnItem { Value = hourly[i].ActiveSeconds / 60.0 });
+            double minutes = hourly[i].ActiveSeconds / 60.0;
+            var item = new ColumnItem { Value = minutes };
+            // 0 值时用浅色,模拟 macOS 图表弱化
+            if (minutes < 0.01) item.Color = OxyColor.FromAColor(40, AppleBlue);
+            series.Items.Add(item);
         }
         model.Series.Add(series);
 
-        var categoryAxis = new CategoryAxis
-        {
-            Position = AxisPosition.Bottom,
-            Title = "小时",
-            MajorStep = 1,
-            MinorStep = 1,
-            Minimum = -0.5,
-            Maximum = 23.5,
-        };
-        for (int i = 0; i < 24; i++) categoryAxis.Labels.Add(i.ToString());
-        model.Axes.Add(categoryAxis);
-
-        model.Axes.Add(new LinearAxis
-        {
-            Position = AxisPosition.Left,
-            Title = "分钟",
-            Minimum = 0,
-        });
+        var hourLabels = Enumerable.Range(0, 24).Select(i => i.ToString());
+        model.Axes.Add(MakeAppleCategoryAxis(AxisPosition.Bottom, hourLabels));
+        model.Axes.Add(MakeAppleLinearAxis(AxisPosition.Left, unit: "分钟"));
 
         return model;
     }
@@ -275,44 +348,61 @@ public sealed class MainViewModel : ViewModelBase
     private PlotModel BuildTopAppsChart(string date)
     {
         var top = _repo.GetTopApps(date, 5);
+        // Apple 调色板,顺序应用
+        var palette = new[] { AppleBlue, AppleTeal, AppleGreen, AppleOrange, ApplePink, ApplePurple };
 
-        var model = new PlotModel { Title = "今日 Top 5 应用", TitleFontSize = 14 };
+        var model = new PlotModel { Title = null };
+        ApplyAppleTheme(model);
+
         var series = new BarSeries
         {
-            FillColor = OxyColors.CadetBlue,
-            StrokeColor = OxyColors.CadetBlue,
+            FillColor = AppleBlue,
+            StrokeColor = AppleBlue,
+            StrokeThickness = 0,
+            BarWidth = 16,
+            GapWidth = 6,
         };
-        var categoryAxis = new CategoryAxis { Position = AxisPosition.Left };
-        foreach (var app in top)
+        // 反转使最大的在顶部
+        var reversed = top.AsEnumerable().Reverse().ToList();
+        var categoryAxis = MakeAppleCategoryAxis(AxisPosition.Left, Enumerable.Empty<string>());
+        for (int i = 0; i < reversed.Count; i++)
         {
-            series.Items.Add(new BarItem { Value = app.DurationSeconds / 60.0 });
+            var app = reversed[i];
+            var color = palette[i % palette.Length];
+            series.Items.Add(new BarItem
+            {
+                Value = app.DurationSeconds / 60.0,
+                Color = color,
+            });
             categoryAxis.Labels.Add(AppFriendlyName(app.ProcessName));
         }
         model.Series.Add(series);
         model.Axes.Add(categoryAxis);
-        model.Axes.Add(new LinearAxis
-        {
-            Position = AxisPosition.Bottom,
-            Title = "分钟",
-            Minimum = 0,
-        });
+        model.Axes.Add(MakeAppleLinearAxis(AxisPosition.Bottom, unit: "分钟"));
+
         return model;
     }
 
     private PlotModel BuildHistoryChart()
     {
-        var model = new PlotModel { Title = "最近 7 天活跃时长", TitleFontSize = 14 };
+        var model = new PlotModel { Title = null };
+        ApplyAppleTheme(model);
+
         var series = new LineSeries
         {
-            Color = OxyColors.OrangeRed,
+            Color = AppleBlue,
+            StrokeThickness = 2.5,
             MarkerType = MarkerType.Circle,
-            MarkerSize = 5,
-            MarkerFill = OxyColors.OrangeRed,
+            MarkerSize = 6,
+            MarkerFill = AppleBlue,
+            MarkerStroke = OxyColors.White,
+            MarkerStrokeThickness = 2,
+            Smooth = true,
         };
 
         // HistoryRows 是按 date DESC 排的,折线图按时间升序更直观
         var ordered = HistoryRows.Reverse().ToList();
-        var categoryAxis = new CategoryAxis { Position = AxisPosition.Bottom, Title = "日期" };
+        var categoryAxis = MakeAppleCategoryAxis(AxisPosition.Bottom, Enumerable.Empty<string>());
         foreach (var row in ordered)
         {
             series.Points.Add(new DataPoint(categoryAxis.Labels.Count, row.ActiveSeconds / 3600.0));
@@ -322,12 +412,23 @@ public sealed class MainViewModel : ViewModelBase
         }
         model.Series.Add(series);
         model.Axes.Add(categoryAxis);
-        model.Axes.Add(new LinearAxis
+        model.Axes.Add(MakeAppleLinearAxis(AxisPosition.Left, unit: "小时"));
+
+        // 在折线下方填充淡色面积,呼应 macOS 健康图表风格
+        var areaSeries = new AreaSeries
         {
-            Position = AxisPosition.Left,
-            Title = "小时",
-            Minimum = 0,
-        });
+            Color = OxyColors.Transparent,
+            Fill = OxyColor.FromAColor(40, AppleBlue),
+            StrokeThickness = 0,
+        };
+        for (int i = 0; i < series.Points.Count; i++)
+        {
+            var p = series.Points[i];
+            areaSeries.Points.Add(p);
+            areaSeries.Points2.Add(new DataPoint(p.X, 0));
+        }
+        model.Series.Insert(0, areaSeries);
+
         return model;
     }
 
