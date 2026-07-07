@@ -8,14 +8,13 @@
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
+        ShowInTaskbar="False"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResizeWithGrip"
-        Loaded="MainWindow_OnLoaded"
-        StateChanged="MainWindow_OnStateChanged"
-        MouseDown="TitleBar_OnMouseDown">
+        Loaded="MainWindow_OnLoaded">
 
     <!-- 外层圆角阴影:模拟 macOS 窗口悬浮 -->
-    <Border Background="Transparent" Margin="12">
+    <Border x:Name="OuterBorder" Background="Transparent" Margin="12">
         <Border x:Name="WindowShell"
                 Background="{StaticResource WindowBg}"
                 CornerRadius="12">

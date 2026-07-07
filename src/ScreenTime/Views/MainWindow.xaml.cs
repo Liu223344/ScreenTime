@@ -9,7 +9,7 @@ namespace ScreenTime.Views;
 /// 主窗口(无边框、macOS 风格 chrome)代码后置。
 /// - 左上角红/黄圆点为关闭/最小化按钮(绿点装饰);
 /// - 标题栏区域可拖拽移动窗口;
-/// - 双击标题栏切换最大化;
+/// - 双击标题栏切换自定义最大化(避免 WindowStyle=None + Maximized 覆盖任务栏);
 /// - 顶部分段选择器切换今日/历史/设置面板;
 /// - 关闭按钮只是隐藏到托盘,程序通过托盘菜单退出。
 /// </summary>
@@ -18,6 +18,8 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel;
     private System.Windows.Threading.DispatcherTimer? _refreshTimer;
     private bool _forceClose;
+    private bool _isMaximized;
+    private double _restoreLeft, _restoreTop, _restoreWidth, _restoreHeight;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -49,38 +51,59 @@ public partial class MainWindow : Window
         _refreshTimer.Start();
     }
 
-    private void MainWindow_OnStateChanged(object? sender, EventArgs e)
-    {
-        // 无边框窗口最大化时,避免遮住任务栏:调整为工作区大小
-        if (WindowState == WindowState.Maximized)
-        {
-            var workArea = SystemParameters.WorkArea;
-            // 在最大化时移除外边距,避免圆角边距叠加
-            Margin = new Thickness(0);
-            Width = workArea.Width;
-            Height = workArea.Height;
-            Left = workArea.Left;
-            Top = workArea.Top;
-        }
-        else
-        {
-            Margin = new Thickness(0);
-        }
-    }
-
     /// <summary>
-    /// 标题栏拖拽:在标题栏区域按下并移动时移动窗口。
+    /// 标题栏拖拽:左键按下并移动时移动窗口;双击切换最大化。
+    /// 仅绑定在标题栏 Grid 上(不绑定到 Window),避免在内容区点击时误触发拖拽,
+    /// 也避免与按钮等子元素的鼠标事件冲突。
     /// </summary>
     private void TitleBar_OnMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton == MouseButton.Left)
+        if (e.ChangedButton != MouseButton.Left) return;
+
+        if (e.ClickCount >= 2)
         {
-            if (e.ClickCount >= 2)
-            {
-                WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-                return;
-            }
-            try { DragMove(); } catch { /* DragMove 可能因按钮释放时机抛异常,忽略 */ }
+            ToggleMaximize();
+            return;
+        }
+
+        try { DragMove(); }
+        catch { /* DragMove 在非按下状态调用会抛异常,忽略 */ }
+    }
+
+    /// <summary>
+    /// 自定义最大化:不使用 WindowState.Maximized(它在 WindowStyle=None 下会覆盖任务栏),
+    /// 而是手动把窗口尺寸设为工作区大小,并去掉外边距和圆角。还原时恢复。
+    /// </summary>
+    private void ToggleMaximize()
+    {
+        if (!_isMaximized)
+        {
+            // 保存还原尺寸
+            _restoreLeft = Left;
+            _restoreTop = Top;
+            _restoreWidth = Width;
+            _restoreHeight = Height;
+
+            var work = SystemParameters.WorkArea;
+            OuterBorder.Margin = new Thickness(0);
+            WindowShell.CornerRadius = new CornerRadius(0);
+
+            Left = work.Left;
+            Top = work.Top;
+            Width = work.Width;
+            Height = work.Height;
+            _isMaximized = true;
+        }
+        else
+        {
+            OuterBorder.Margin = new Thickness(12);
+            WindowShell.CornerRadius = new CornerRadius(12);
+
+            Left = _restoreLeft;
+            Top = _restoreTop;
+            Width = _restoreWidth;
+            Height = _restoreHeight;
+            _isMaximized = false;
         }
     }
 
@@ -92,6 +115,12 @@ public partial class MainWindow : Window
 
     private void MinBtn_OnClick(object sender, RoutedEventArgs e)
     {
+        // 若当前处于自定义最大化状态,先还原到普通尺寸再最小化,
+        // 这样从托盘恢复时窗口是正常大小,避免 _isMaximized 状态与实际尺寸不一致。
+        if (_isMaximized)
+        {
+            ToggleMaximize();
+        }
         WindowState = WindowState.Minimized;
     }
 

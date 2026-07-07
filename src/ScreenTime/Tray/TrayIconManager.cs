@@ -4,12 +4,13 @@ using System.Drawing.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using ScreenTime.Data;
 using ScreenTime.Services;
+// 注意:本文件同时使用 System.Drawing(生成图标位图)和 System.Windows.Media(返回 ImageSource)。
+// 为避免 Color/FontStyle/Brushes 等类型在两个命名空间间歧义,这里不导入 System.Windows.Media,
+// 而在用到时完全限定为 System.Windows.Media.xxx。
 
 namespace ScreenTime.Tray;
 
@@ -136,8 +137,10 @@ public sealed class TrayIconManager : IDisposable
 
     /// <summary>
     /// 生成 32x32 蓝底白字 "S" 图标,转为 ImageSource 供 TaskbarIcon 使用。
+    /// 注意:本文件不导入 System.Windows.Media / System.Windows.Media.Imaging,
+    /// 因为它们会与 System.Drawing 的 Color/FontStyle/Brushes 冲突。这里使用完全限定名。
     /// </summary>
-    private static ImageSource GenerateIconSource()
+    private static System.Windows.Media.ImageSource GenerateIconSource()
     {
         using var bmp = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bmp))
@@ -146,7 +149,7 @@ public sealed class TrayIconManager : IDisposable
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             using var bgBrush = new SolidBrush(Color.SteelBlue);
             g.FillRectangle(bgBrush, 0, 0, 32, 32);
-            using var font = new Font("Segoe UI", 18, FontStyle.Bold);
+            using var font = new Font("Segoe UI", 18, System.Drawing.FontStyle.Bold);
             var sf = new StringFormat
             {
                 Alignment = StringAlignment.Center,
@@ -157,8 +160,8 @@ public sealed class TrayIconManager : IDisposable
         IntPtr hIcon = bmp.GetHicon();
         try
         {
-            var src = Imaging.CreateBitmapSourceFromHIcon(
-                hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            var src = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                hIcon, Int32Rect.Empty, System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
             src.Freeze();
             return src;
         }

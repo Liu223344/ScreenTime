@@ -1,0 +1,3 @@
+/workspace/publish/ScreenTime.pdb
+/workspace/publish/appsettings.json
+/workspace/publish/ScreenTime.exe

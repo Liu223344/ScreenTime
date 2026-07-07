@@ -23,7 +23,9 @@ public sealed class ForegroundAppService
         {
             try
             {
-                var proc = Process.GetProcessById((int)pid);
+                // Process.GetProcessById 返回的对象持有 OS 句柄,必须 Dispose,
+                // 否则每次 tick(默认 3 秒)都会泄漏,长期运行耗尽句柄。
+                using var proc = Process.GetProcessById((int)pid);
                 processName = string.IsNullOrEmpty(proc.ProcessName) ? "Unknown" : proc.ProcessName + ".exe";
             }
             catch (ArgumentException)

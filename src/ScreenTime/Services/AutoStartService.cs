@@ -22,7 +22,10 @@ public sealed class AutoStartService
         using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, writable: true);
         if (enabled)
         {
-            string exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+            // 单文件发布时 Assembly.Location 返回空字符串(IL3000),优先用 Environment.ProcessPath。
+            // 兜底用 AppContext.BaseDirectory + 可执行文件名,保证单文件场景也能注册自启。
+            string exePath = Environment.ProcessPath
+                ?? System.IO.Path.Combine(AppContext.BaseDirectory, "ScreenTime.exe");
             key.SetValue(ValueName, $"\"{exePath}\"");
         }
         else

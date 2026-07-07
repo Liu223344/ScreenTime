@@ -248,7 +248,9 @@ public sealed class MainViewModel : ViewModelBase
     private static readonly OxyColor AppleChartBg = OxyColors.White;
 
     /// <summary>
-    /// 应用统一的 Apple 风格 axis 样式到 PlotModel。
+    /// 应用统一的 Apple 风格样式到 PlotModel。
+    /// 注意:OxyPlot 2.1.x 中 legend 颜色属性已移到独立的 Legend 对象上,
+    /// PlotModel 本身不再有 LegendTextColor/LegendBorderColor。本项目不显示图例,故无需设置。
     /// </summary>
     private static void ApplyAppleTheme(PlotModel model)
     {
@@ -257,10 +259,9 @@ public sealed class MainViewModel : ViewModelBase
         model.TextColor = AppleTextPrimary;
         model.TitleColor = AppleTextPrimary;
         model.SubtitleColor = AppleTextSecondary;
-        model.LegendTextColor = AppleTextPrimary;
-        model.LegendBorderColor = AppleHairline;
         model.PlotAreaBorderColor = AppleHairline;
         model.PlotAreaBorderThickness = new OxyThickness(0, 0, 0, 1); // 仅底部细线
+        model.IsLegendVisible = false;
     }
 
     private static LinearAxis MakeAppleLinearAxis(AxisPosition pos, string? title = null, string? unit = null)
@@ -271,7 +272,6 @@ public sealed class MainViewModel : ViewModelBase
             Title = title,
             TitleColor = AppleTextSecondary,
             TitleFontSize = 11,
-            TitleFontWeight = FontWeights.Normal,
             TextColor = AppleTextTertiary,
             FontSize = 11,
             MajorGridlineStyle = pos == AxisPosition.Left ? LineStyle.Solid : LineStyle.None,
@@ -307,7 +307,8 @@ public sealed class MainViewModel : ViewModelBase
             AxislineThickness = 1,
             MajorGridlineStyle = LineStyle.None,
             MinorGridlineStyle = LineStyle.None,
-            GapWidth = 6,
+            // OxyPlot 2.1.x: GapWidth 是 CategoryAxis 的属性(控制类别间距),不是 series 的。
+            GapWidth = 0.2,
         };
         foreach (var lbl in labels) axis.Labels.Add(lbl);
         return axis;
@@ -320,26 +321,30 @@ public sealed class MainViewModel : ViewModelBase
         var model = new PlotModel { Title = null };
         ApplyAppleTheme(model);
 
-        var series = new ColumnSeries
+        // OxyPlot 2.1.x 已移除 ColumnSeries/ColumnItem。改用 AreaSeries(带填充的折线)
+        // 展示 24 小时趋势,视觉上更接近 macOS 健康 App 的活动曲线。
+        var area = new AreaSeries
         {
-            FillColor = AppleBlue,
-            StrokeColor = AppleBlue,
-            StrokeThickness = 0,
-            ColumnWidth = 14,
-            GapWidth = 6,
+            Color = AppleBlue,
+            Fill = OxyColor.FromAColor(56, AppleBlue),
+            StrokeThickness = 2,
         };
         for (int i = 0; i < 24; i++)
         {
             double minutes = hourly[i].ActiveSeconds / 60.0;
-            var item = new ColumnItem { Value = minutes };
-            // 0 值时用浅色,模拟 macOS 图表弱化
-            if (minutes < 0.01) item.Color = OxyColor.FromAColor(40, AppleBlue);
-            series.Items.Add(item);
+            area.Points.Add(new DataPoint(i, minutes));
+            area.Points2.Add(new DataPoint(i, 0));
         }
-        model.Series.Add(series);
+        model.Series.Add(area);
 
-        var hourLabels = Enumerable.Range(0, 24).Select(i => i.ToString());
-        model.Axes.Add(MakeAppleCategoryAxis(AxisPosition.Bottom, hourLabels));
+        // X 轴:小时(数值轴,0-23,每 2 小时一个主刻度)
+        var xAxis = MakeAppleLinearAxis(AxisPosition.Bottom);
+        xAxis.Minimum = 0;
+        xAxis.Maximum = 23;
+        xAxis.MajorStep = 2;
+        xAxis.MinorStep = 1;
+        xAxis.StringFormat = "0";
+        model.Axes.Add(xAxis);
         model.Axes.Add(MakeAppleLinearAxis(AxisPosition.Left, unit: "分钟"));
 
         return model;
@@ -354,13 +359,14 @@ public sealed class MainViewModel : ViewModelBase
         var model = new PlotModel { Title = null };
         ApplyAppleTheme(model);
 
+        // OxyPlot 2.1.x:BarSeries 为水平条形(CategoryAxis 在 Y 轴)。
+        // BarWidth 控制条形粗细(类别单位),GapWidth 在 CategoryAxis 上控制类别间距。
         var series = new BarSeries
         {
             FillColor = AppleBlue,
             StrokeColor = AppleBlue,
             StrokeThickness = 0,
-            BarWidth = 16,
-            GapWidth = 6,
+            BarWidth = 0.65,
         };
         // 反转使最大的在顶部
         var reversed = top.AsEnumerable().Reverse().ToList();
@@ -388,6 +394,8 @@ public sealed class MainViewModel : ViewModelBase
         var model = new PlotModel { Title = null };
         ApplyAppleTheme(model);
 
+        // OxyPlot 2.1.x:LineSeries.Smooth 已移除,改用 InterpolationAlgorithm 做平滑;
+        // 7 天趋势用直线即可,足够清晰。
         var series = new LineSeries
         {
             Color = AppleBlue,
@@ -397,7 +405,6 @@ public sealed class MainViewModel : ViewModelBase
             MarkerFill = AppleBlue,
             MarkerStroke = OxyColors.White,
             MarkerStrokeThickness = 2,
-            Smooth = true,
         };
 
         // HistoryRows 是按 date DESC 排的,折线图按时间升序更直观
@@ -410,9 +417,6 @@ public sealed class MainViewModel : ViewModelBase
             DateTime dt = DateTime.TryParse(row.Date, out var parsed) ? parsed : DateTime.Today;
             categoryAxis.Labels.Add(dt.ToString("MM-dd"));
         }
-        model.Series.Add(series);
-        model.Axes.Add(categoryAxis);
-        model.Axes.Add(MakeAppleLinearAxis(AxisPosition.Left, unit: "小时"));
 
         // 在折线下方填充淡色面积,呼应 macOS 健康图表风格
         var areaSeries = new AreaSeries
@@ -427,7 +431,10 @@ public sealed class MainViewModel : ViewModelBase
             areaSeries.Points.Add(p);
             areaSeries.Points2.Add(new DataPoint(p.X, 0));
         }
-        model.Series.Insert(0, areaSeries);
+        model.Series.Add(areaSeries);
+        model.Series.Add(series);
+        model.Axes.Add(categoryAxis);
+        model.Axes.Add(MakeAppleLinearAxis(AxisPosition.Left, unit: "小时"));
 
         return model;
     }
