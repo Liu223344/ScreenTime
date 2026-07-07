@@ -1,0 +1,326 @@
+<Window x:Class="ScreenTime.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:oxy="http://oxyplot.org/wpf"
+        Title="ScreenTime"
+        Height="720" Width="1040"
+        MinHeight="620" MinWidth="900"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResizeWithGrip"
+        Loaded="MainWindow_OnLoaded">
+
+    <!-- 外层圆角阴影:模拟 macOS 窗口悬浮 -->
+    <Border x:Name="OuterBorder" Background="Transparent" Margin="12">
+        <Border x:Name="WindowShell"
+                Background="{StaticResource WindowBg}"
+                CornerRadius="12">
+            <Border.Effect>
+                <DropShadowEffect x:Name="WindowShadow"
+                                  Color="#000000" BlurRadius="36" ShadowDepth="0" Opacity="0.22" Direction="270" />
+            </Border.Effect>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="40"/>   <!-- 标题栏 -->
+                    <RowDefinition Height="Auto"/> <!-- segmented control -->
+                    <RowDefinition Height="*"/>    <!-- 内容 -->
+                </Grid.RowDefinitions>
+
+                <!-- ============== 标题栏(可拖拽 + 交通灯) ============== -->
+                <Grid Grid.Row="0" Background="Transparent"
+                      MouseDown="TitleBar_OnMouseDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 交通灯:红黄绿三个圆点(装饰性 + 关闭/最小化按钮) -->
+                    <StackPanel Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center">
+                        <Button x:Name="CloseBtn" Style="{x:Null}"
+                                Width="13" Height="13" Margin="0,0,8,0"
+                                Cursor="Hand" Click="CloseBtn_OnClick"
+                                ToolTip="关闭">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Ellipse x:Name="e" Fill="#FF5F57">
+                                        <Ellipse.Effect>
+                                            <DropShadowEffect Color="#000000" BlurRadius="0" ShadowDepth="0" Opacity="0" />
+                                        </Ellipse.Effect>
+                                    </Ellipse>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="e" Property="Effect">
+                                                <Setter.Value>
+                                                    <DropShadowEffect Color="#000000" BlurRadius="4" ShadowDepth="0" Opacity="0.3" />
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <Button x:Name="MinBtn" Style="{x:Null}"
+                                Width="13" Height="13" Margin="0,0,8,0"
+                                Cursor="Hand" Click="MinBtn_OnClick"
+                                ToolTip="最小化">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Ellipse x:Name="e" Fill="#FEBC2E" />
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="e" Property="Effect">
+                                                <Setter.Value>
+                                                    <DropShadowEffect Color="#000000" BlurRadius="4" ShadowDepth="0" Opacity="0.3" />
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                        <Ellipse Width="13" Height="13" Fill="#28C840" Opacity="0.9"/>
+                    </StackPanel>
+
+                    <!-- 居中标题 -->
+                    <TextBlock Grid.Column="1" Text="ScreenTime"
+                               Style="{StaticResource SectionTitle}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondary}"
+                               IsHitTestVisible="False"/>
+
+                    <!-- 右侧刷新按钮 -->
+                    <Button Grid.Column="2" Style="{StaticResource SecondaryButton}"
+                            Content="↻ 刷新" Command="{Binding RefreshCommand}"
+                            Margin="0,0,14,0" Padding="12,5" FontSize="12"/>
+                </Grid>
+
+                <!-- ============== Segmented Control(顶部分段选择器,替代 TabControl 头) ============== -->
+                <Grid Grid.Row="1" Margin="24,8,24,12">
+                    <Border Background="#E8E8EC" CornerRadius="9" Padding="3">
+                        <UniformGrid x:Name="SegmentGrid" Columns="3" Height="30">
+                            <RadioButton x:Name="TabToday" GroupName="Tabs" IsChecked="True"
+                                         Style="{StaticResource SegmentedItem}" Content="今日"/>
+                            <RadioButton x:Name="TabHistory" GroupName="Tabs"
+                                         Style="{StaticResource SegmentedItem}" Content="历史"/>
+                            <RadioButton x:Name="TabSettings" GroupName="Tabs"
+                                         Style="{StaticResource SegmentedItem}" Content="设置"/>
+                        </UniformGrid>
+                    </Border>
+                </Grid>
+
+                <!-- ============== 内容区 ============== -->
+                <Grid Grid.Row="2" Margin="24,0,24,20">
+
+                    <!-- 今日 -->
+                    <ScrollViewer x:Name="TodayPanel" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="0,0,8,0">
+
+                            <!-- 顶部统计卡片 -->
+                            <UniformGrid Columns="4" Margin="0,0,0,16">
+                                <!-- 今日活跃(主指标,Apple Blue) -->
+                                <Border Style="{StaticResource MacCard}" Margin="0,0,10,0">
+                                    <StackPanel>
+                                        <TextBlock Text="今日活跃" Style="{StaticResource SecondaryText}"/>
+                                        <TextBlock Text="{Binding TodayActiveDisplay}"
+                                                   Style="{StaticResource HeroNumber}"
+                                                   Foreground="{StaticResource BlueBrush}"
+                                                   Margin="0,4,0,0"/>
+                                        <TextBlock Text="累计使用时长" Style="{StaticResource CaptionText}"
+                                                   Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource MacCard}" Margin="0,0,10,0">
+                                    <StackPanel>
+                                        <TextBlock Text="闲置时长" Style="{StaticResource SecondaryText}"/>
+                                        <TextBlock Text="{Binding TodayIdleDisplay}"
+                                                   Style="{StaticResource HeroNumber}"
+                                                   Foreground="{StaticResource OrangeBrush}"
+                                                   Margin="0,4,0,0"/>
+                                        <TextBlock Text="未操作时长" Style="{StaticResource CaptionText}"
+                                                   Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource MacCard}" Margin="0,0,10,0">
+                                    <StackPanel>
+                                        <TextBlock Text="锁屏时长" Style="{StaticResource SecondaryText}"/>
+                                        <TextBlock Text="{Binding TodayLockedDisplay}"
+                                                   Style="{StaticResource HeroNumber}"
+                                                   Foreground="{StaticResource PurpleBrush}"
+                                                   Margin="0,4,0,0"/>
+                                        <TextBlock Text="屏幕锁定时长" Style="{StaticResource CaptionText}"
+                                                   Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource MacCard}">
+                                    <StackPanel>
+                                        <TextBlock Text="活跃占比" Style="{StaticResource SecondaryText}"/>
+                                        <TextBlock Text="{Binding TodayActiveRatioDisplay}"
+                                                   Style="{StaticResource HeroNumber}"
+                                                   Foreground="{StaticResource GreenBrush}"
+                                                   Margin="0,4,0,0"/>
+                                        <TextBlock Text="活跃 / 总开机" Style="{StaticResource CaptionText}"
+                                                   Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+
+                            <!-- 24 小时柱状图 -->
+                            <Border Style="{StaticResource MacCard}" Margin="0,0,0,16" MinHeight="260">
+                                <StackPanel>
+                                    <TextBlock Text="今日各时段活跃时长" Style="{StaticResource SectionTitle}"
+                                               Margin="0,0,0,12"/>
+                                    <oxy:PlotView Model="{Binding HourlyChart}" MinHeight="220"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Top 5 应用 -->
+                            <Border Style="{StaticResource MacCard}" Margin="0,0,0,8" MinHeight="240">
+                                <StackPanel>
+                                    <TextBlock Text="今日 Top 5 应用" Style="{StaticResource SectionTitle}"
+                                               Margin="0,0,0,12"/>
+                                    <oxy:PlotView Model="{Binding TopAppsChart}" MinHeight="200"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 历史 -->
+                    <ScrollViewer x:Name="HistoryPanel" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                        <StackPanel Margin="0,0,8,0">
+                            <Border Style="{StaticResource MacCard}" Margin="0,0,0,16" MinHeight="260">
+                                <StackPanel>
+                                    <TextBlock Text="最近 7 天活跃趋势" Style="{StaticResource SectionTitle}"
+                                               Margin="0,0,0,12"/>
+                                    <oxy:PlotView Model="{Binding HistoryChart}" MinHeight="220"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource MacCard}">
+                                <StackPanel>
+                                    <TextBlock Text="历史明细" Style="{StaticResource SectionTitle}"
+                                               Margin="0,0,0,8"/>
+                                    <DataGrid ItemsSource="{Binding HistoryRows}"
+                                              Style="{StaticResource MacDataGrid}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="日期" Binding="{Binding Date}" Width="120"/>
+                                            <DataGridTextColumn Header="活跃" Binding="{Binding ActiveSeconds, StringFormat=\{0\} s}" Width="100"/>
+                                            <DataGridTextColumn Header="闲置" Binding="{Binding IdleSeconds, StringFormat=\{0\} s}" Width="100"/>
+                                            <DataGridTextColumn Header="锁屏" Binding="{Binding LockedSeconds, StringFormat=\{0\} s}" Width="100"/>
+                                            <DataGridTextColumn Header="最常用应用" Binding="{Binding TopApp}" Width="*"/>
+                                            <DataGridTextColumn Header="最常用时长" Binding="{Binding TopAppSeconds, StringFormat=\{0\} s}" Width="120"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 设置 -->
+                    <ScrollViewer x:Name="SettingsPanel" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                        <StackPanel Margin="0,0,8,0" MaxWidth="640" HorizontalAlignment="Left">
+
+                            <GroupBox Style="{StaticResource MacGroupBox}" Header="追踪" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="闲置阈值" Style="{StaticResource SecondaryText}" Margin="0,0,0,8"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Slider Style="{StaticResource MacSlider}"
+                                                Minimum="30" Maximum="300" Width="380"
+                                                Value="{Binding IdleThresholdSec}"
+                                                TickFrequency="10" IsSnapToTickEnabled="True"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                                            <TextBlock Text="{Binding IdleThresholdSec}" FontWeight="SemiBold" MinWidth="36"/>
+                                            <TextBlock Text=" 秒" Foreground="{StaticResource TextSecondary}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="无键鼠输入达到该秒数时,视为闲置状态。"
+                                               Style="{StaticResource CaptionText}" Margin="0,10,0,0"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Style="{StaticResource MacGroupBox}" Header="休息提醒" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <CheckBox Content="启用休息提醒" Style="{StaticResource MacCheckbox}"
+                                              IsChecked="{Binding ReminderEnabled}" Margin="0,0,0,12"/>
+                                    <TextBlock Text="提醒间隔" Style="{StaticResource SecondaryText}" Margin="0,0,0,8"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Slider Style="{StaticResource MacSlider}"
+                                                Minimum="10" Maximum="180" Width="380"
+                                                Value="{Binding ReminderIntervalMin}"
+                                                TickFrequency="5" IsSnapToTickEnabled="True"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                                            <TextBlock Text="{Binding ReminderIntervalMin}" FontWeight="SemiBold" MinWidth="36"/>
+                                            <TextBlock Text=" 分钟" Foreground="{StaticResource TextSecondary}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <CheckBox Content="今日暂停提醒" Style="{StaticResource MacCheckbox}"
+                                              IsChecked="{Binding IsReminderMuted}" Margin="0,16,0,0"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Style="{StaticResource MacGroupBox}" Header="数据" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="数据保留天数" Style="{StaticResource SecondaryText}" Margin="0,0,0,8"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Slider Style="{StaticResource MacSlider}"
+                                                Minimum="7" Maximum="365" Width="380"
+                                                Value="{Binding RetentionDays}"
+                                                TickFrequency="1" IsSnapToTickEnabled="True"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                                            <TextBlock Text="{Binding RetentionDays}" FontWeight="SemiBold" MinWidth="36"/>
+                                            <TextBlock Text=" 天" Foreground="{StaticResource TextSecondary}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="超过保留期的历史记录将被自动清理。"
+                                               Style="{StaticResource CaptionText}" Margin="0,10,0,0"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                        <Button Style="{StaticResource SecondaryButton}" Content="立即清理"
+                                                Command="{Binding PurgeNowCommand}" Padding="14,6"/>
+                                        <Button Style="{StaticResource SecondaryButton}" Content="导出近 30 天 CSV"
+                                                Command="{Binding ExportCsvCommand}" Padding="14,6" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Style="{StaticResource MacGroupBox}" Header="系统" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <CheckBox Content="开机自启动" Style="{StaticResource MacCheckbox}"
+                                              IsChecked="{Binding AutoStartWithWindows}"/>
+                                    <TextBlock Text="登录 Windows 后自动启动并最小化到托盘。"
+                                               Style="{StaticResource CaptionText}" Margin="0,10,0,0"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <Button Style="{StaticResource PrimaryButton}" Content="保存设置"
+                                    Command="{Binding SaveSettingsCommand}"
+                                    Padding="28,10" HorizontalAlignment="Left" Margin="0,4,0,16"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </Border>
+    </Border>
+</Window>
