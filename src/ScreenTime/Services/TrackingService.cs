@@ -101,6 +101,16 @@ public sealed class TrackingService : IHostedService, IDisposable
             else
             {
                 _sessionSeconds += (long)Math.Round(elapsed);
+
+                // 跨午夜:把当前会话 flush 到昨天(_sessionStart 所在日期),
+                // 从今天 00:00 开始新会话。避免长时间运行的会话把今天的数据记到昨天。
+                if (now.Date != _sessionStart.Date)
+                {
+                    FlushCurrentSession();
+                    _sessionStart = now.Date;
+                    _sessionSeconds = 0;
+                    // _currentState / _currentProcess 保持,后续状态探测会自然衔接
+                }
             }
 
             int threshold = Math.Max(1, _settings.Current.IdleThresholdSec);

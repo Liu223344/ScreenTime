@@ -45,8 +45,23 @@ public partial class App : Application
         _services = services.BuildServiceProvider();
 
         // ----- 数据库初始化 -----
+        // 若初始化失败(磁盘只读、路径权限不足等),提示用户后退出,
+        // 避免未捕获异常导致进程静默崩溃、托盘不出现。
         var dbInit = _services.GetRequiredService<DatabaseInitializer>();
-        dbInit.Initialize();
+        try
+        {
+            dbInit.Initialize();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"数据库初始化失败,程序无法启动。\n\n路径:{DbPaths.DatabasePath}\n错误:{ex.Message}",
+                "ScreenTime 启动错误",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
 
         // 启动时按当前保留天数做一次清理(防止用户长期不开机)
         var settings = _services.GetRequiredService<UserSettingsService>();

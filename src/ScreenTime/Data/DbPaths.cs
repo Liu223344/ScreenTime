@@ -11,5 +11,6 @@ public static class DbPaths
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "ScreenTime", "screentime.db");
 
-    public static string ConnectionString => $"Data Source={DatabasePath}";
+    // 路径用双引号包裹,防止用户名含分号等特殊字符破坏连接字符串解析。
+    public static string ConnectionString => $"Data Source=\"{DatabasePath}\"";
 }

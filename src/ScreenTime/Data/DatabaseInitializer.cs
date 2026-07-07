@@ -63,15 +63,9 @@ public sealed class DatabaseInitializer
 
     private static string GetDbPath(string connectionString)
     {
-        // 简单解析 "Data Source=path" 中的 path
-        var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var p in parts)
-        {
-            if (p.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase))
-            {
-                return p.Substring("Data Source=".Length).Trim('"', '\'');
-            }
-        }
-        return "screentime.db";
+        // 用 SqliteConnectionStringBuilder 解析,正确处理引号包裹的路径
+        // (路径可能含分号、空格等特殊字符,手动 Split 会出错)。
+        var builder = new SqliteConnectionStringBuilder(connectionString);
+        return string.IsNullOrEmpty(builder.DataSource) ? "screentime.db" : builder.DataSource;
     }
 }

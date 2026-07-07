@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("Lightweight visual screen time tracker for Windows.")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7ab7b083c0acfcf1c65ba76826bce318b63bef2b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c1439d75e548eadaae7c5338265135ec27d358bb")]
 [assembly: System.Reflection.AssemblyProductAttribute("ScreenTime")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ScreenTime - Lightweight Screen Time Tracker")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

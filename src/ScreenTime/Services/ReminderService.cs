@@ -21,7 +21,6 @@ public sealed class ReminderService : IHostedService, IDisposable
 
     private readonly UserSettingsService _settings;
     private Timer? _timer;
-    private readonly Random _rand = new();
     private bool _muted; // 「今日暂停提醒」用
 
     public event Action<string>? ReminderTriggered;
@@ -71,7 +70,9 @@ public sealed class ReminderService : IHostedService, IDisposable
     private void OnTick(object? state)
     {
         if (_muted || !_settings.Current.ReminderEnabled) return;
-        string msg = Messages[_rand.Next(Messages.Length)];
+        // Random.Shared 是线程安全的(.NET 6+);System.Random 实例在 ThreadPool
+        // 并发调用下可能返回 0 或损坏内部状态。
+        string msg = Messages[Random.Shared.Next(Messages.Length)];
         ReminderTriggered?.Invoke(msg);
     }
 
