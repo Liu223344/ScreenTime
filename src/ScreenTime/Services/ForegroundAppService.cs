@@ -38,8 +38,9 @@ public sealed class ForegroundAppService
                 // 访问被拒(部分系统进程)
                 processName = "System";
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                AppLogger.Instance.LogWarning($"获取进程名失败 (pid={pid})", ex);
                 processName = "Unknown";
             }
         }

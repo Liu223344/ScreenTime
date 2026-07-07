@@ -53,12 +53,31 @@ public sealed class DatabaseInitializer
             cmd.ExecuteNonQuery();
         }
 
-        // 启用 WAL 提升并发写入性能
+        // 启用 WAL 提升并发写入性能;WAL 是数据库级持久属性,设一次永久有效。
+        // synchronous=NORMAL 在 WAL 模式下兼顾安全与性能(仅可能在系统崩溃时丢最后一段事务,
+        // 不会损坏数据库)。busy_timeout=5000 让并发写等待 5 秒而非立即抛 SQLITE_BUSY。
         using (var pragma = conn.CreateCommand())
         {
-            pragma.CommandText = "PRAGMA journal_mode=WAL;";
+            pragma.CommandText = """
+                PRAGMA journal_mode=WAL;
+                PRAGMA synchronous=NORMAL;
+                PRAGMA busy_timeout=5000;
+                PRAGMA wal_autocheckpoint=1000;
+                """;
             pragma.ExecuteNonQuery();
         }
+    }
+
+    /// <summary>
+    /// 退出时执行 WAL checkpoint 并截断 -wal 文件,防止其无限增长。
+    /// </summary>
+    public void Checkpoint()
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        cmd.ExecuteNonQuery();
     }
 
     private static string GetDbPath(string connectionString)

@@ -25,6 +25,7 @@ public partial class App : Application
     private System.Windows.Threading.DispatcherTimer? _tooltipTimer;
     private TrackingService? _tracking;
     private ReminderService? _reminder;
+    private AppLogger? _logger;
     private bool _exiting;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -43,6 +44,8 @@ public partial class App : Application
         var services = new ServiceCollection();
         ConfigureServices(services);
         _services = services.BuildServiceProvider();
+        _logger = _services.GetRequiredService<AppLogger>();
+        _logger.LogInfo("ScreenTime 启动");
 
         // ----- 数据库初始化 -----
         // 若初始化失败(磁盘只读、路径权限不足等),提示用户后退出,
@@ -54,6 +57,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
+            _logger?.LogError("数据库初始化失败", ex);
             MessageBox.Show(
                 $"数据库初始化失败,程序无法启动。\n\n路径:{DbPaths.DatabasePath}\n错误:{ex.Message}",
                 "ScreenTime 启动错误",
@@ -71,9 +75,9 @@ public partial class App : Application
             string cutoff = DateTime.Today.AddDays(-settings.Current.RetentionDays).ToString("yyyy-MM-dd");
             repo.PurgeOlderThan(cutoff);
         }
-        catch
+        catch (Exception ex)
         {
-            // 清理失败不阻塞启动
+            _logger?.LogWarning("启动清理旧数据失败", ex);
         }
 
         // ----- 托盘 -----
@@ -103,6 +107,9 @@ public partial class App : Application
 
     private static void ConfigureServices(IServiceCollection services)
     {
+        // 日志
+        services.AddSingleton<AppLogger>();
+
         // 数据
         services.AddSingleton(new DatabaseInitializer(DbPaths.ConnectionString));
         services.AddSingleton(new UsageRepository(DbPaths.ConnectionString));
@@ -149,12 +156,19 @@ public partial class App : Application
         {
             _reminder?.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
-        catch { /* 忽略退出时的异常 */ }
+        catch (Exception ex) { _logger?.LogWarning("退出时停止 ReminderService 失败", ex); }
         try
         {
             _tracking?.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
-        catch { /* 忽略退出时的异常 */ }
+        catch (Exception ex) { _logger?.LogWarning("退出时停止 TrackingService 失败", ex); }
+
+        // WAL checkpoint:把 -wal 文件内容合回主库并截断,防止文件无限增长
+        try
+        {
+            _services?.GetRequiredService<DatabaseInitializer>().Checkpoint();
+        }
+        catch (Exception ex) { _logger?.LogWarning("退出时 WAL checkpoint 失败", ex); }
 
         _tray?.Dispose();
         _services?.Dispose();
@@ -170,7 +184,7 @@ public partial class App : Application
             {
                 _tracking?.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
             }
-            catch { }
+            catch (Exception ex) { _logger?.LogWarning("OnExit flush 失败", ex); }
             _tray?.Dispose();
             _services?.Dispose();
         }

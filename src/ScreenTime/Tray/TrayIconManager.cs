@@ -54,9 +54,9 @@ public sealed class TrayIconManager : IDisposable
         {
             _icon.ForceCreate();
         }
-        catch
+        catch (Exception ex)
         {
-            // ForceCreate 在某些环境下可能抛异常,忽略以保证启动不中断
+            AppLogger.Instance.LogWarning("托盘 ForceCreate 失败", ex);
         }
 
         // 订阅提醒事件,在 UI 线程显示气泡
@@ -106,9 +106,9 @@ public sealed class TrayIconManager : IDisposable
             {
                 _icon?.ShowNotification("该休息啦", message, NotificationIcon.Info);
             }
-            catch
+            catch (Exception ex)
             {
-                // 通知失败不应影响后台运行
+                AppLogger.Instance.LogWarning("托盘通知显示失败", ex);
             }
         });
     }

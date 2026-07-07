@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using ScreenTime.Models;
+using ScreenTime.Services;
 
 namespace ScreenTime.Data;
 
@@ -16,59 +17,84 @@ public sealed class UsageRepository
         _connectionString = connectionString;
     }
 
+    /// <summary>
+    /// 打开连接并设置连接级 PRAGMA(busy_timeout 是连接级属性,每次新连接都需设置)。
+    /// </summary>
+    private SqliteConnection OpenConnection()
+    {
+        var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA busy_timeout=5000;";
+        cmd.ExecuteNonQuery();
+        return conn;
+    }
+
     // ---------- 写入 ----------
 
     /// <summary>
-    /// 累加某天的汇总值(原子 upsert)。
+    /// 累加某天的汇总值(原子 upsert)。写入失败时记录日志但不抛出,
+    /// 避免异常中断 TrackingService 状态机。
     /// </summary>
     public void UpsertDailySummary(string date, long activeDelta, long idleDelta, long lockedDelta)
     {
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO daily_summary(date, active_sec, idle_sec, locked_sec)
-            VALUES(@date, @a, @i, @l)
-            ON CONFLICT(date) DO UPDATE SET
-              active_sec = active_sec + @a,
-              idle_sec   = idle_sec   + @i,
-              locked_sec = locked_sec + @l;
-            """;
-        cmd.Parameters.AddWithValue("@date", date);
-        cmd.Parameters.AddWithValue("@a", activeDelta);
-        cmd.Parameters.AddWithValue("@i", idleDelta);
-        cmd.Parameters.AddWithValue("@l", lockedDelta);
-        cmd.ExecuteNonQuery();
+        try
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO daily_summary(date, active_sec, idle_sec, locked_sec)
+                VALUES(@date, @a, @i, @l)
+                ON CONFLICT(date) DO UPDATE SET
+                  active_sec = active_sec + @a,
+                  idle_sec   = idle_sec   + @i,
+                  locked_sec = locked_sec + @l;
+                """;
+            cmd.Parameters.AddWithValue("@date", date);
+            cmd.Parameters.AddWithValue("@a", activeDelta);
+            cmd.Parameters.AddWithValue("@i", idleDelta);
+            cmd.Parameters.AddWithValue("@l", lockedDelta);
+            cmd.ExecuteNonQuery();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.LogWarning($"UpsertDailySummary 失败 (date={date})", ex);
+        }
     }
 
     /// <summary>
-    /// 追加一条应用使用记录。
+    /// 追加一条应用使用记录。写入失败时记录日志但不抛出。
     /// </summary>
     public void AddAppUsage(string date, string processName, string? windowTitle,
                             long durationSeconds, string startedAt, string endedAt)
     {
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO app_usage(date, process_name, window_title, duration_sec, started_at, ended_at)
-            VALUES(@date, @proc, @title, @dur, @start, @end);
-            """;
-        cmd.Parameters.AddWithValue("@date", date);
-        cmd.Parameters.AddWithValue("@proc", processName);
-        cmd.Parameters.AddWithValue("@title", (object?)windowTitle ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@dur", durationSeconds);
-        cmd.Parameters.AddWithValue("@start", startedAt);
-        cmd.Parameters.AddWithValue("@end", endedAt);
-        cmd.ExecuteNonQuery();
+        try
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO app_usage(date, process_name, window_title, duration_sec, started_at, ended_at)
+                VALUES(@date, @proc, @title, @dur, @start, @end);
+                """;
+            cmd.Parameters.AddWithValue("@date", date);
+            cmd.Parameters.AddWithValue("@proc", processName);
+            cmd.Parameters.AddWithValue("@title", (object?)windowTitle ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@dur", durationSeconds);
+            cmd.Parameters.AddWithValue("@start", startedAt);
+            cmd.Parameters.AddWithValue("@end", endedAt);
+            cmd.ExecuteNonQuery();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.LogWarning($"AddAppUsage 失败 (date={date}, proc={processName})", ex);
+        }
     }
 
     // ---------- 读取 ----------
 
     public DailySummary? GetSummary(string date)
     {
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT date, active_sec, idle_sec, locked_sec FROM daily_summary WHERE date=@date;";
         cmd.Parameters.AddWithValue("@date", date);
@@ -97,8 +123,7 @@ public sealed class UsageRepository
         var result = new List<HourlyActivePoint>(24);
         for (int i = 0; i < 24; i++) result.Add(new HourlyActivePoint { Hour = i });
 
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
         // started_at 形如 "2026-07-07T14:23:01";取第 11-13 位的小时数字。
         cmd.CommandText = """
@@ -130,8 +155,7 @@ public sealed class UsageRepository
     public List<AppUsageRecord> GetTopApps(string date, int limit)
     {
         var list = new List<AppUsageRecord>();
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT process_name, SUM(duration_sec) AS s
@@ -162,8 +186,7 @@ public sealed class UsageRepository
     public List<HistoryRow> GetDailyHistory(string from, string to)
     {
         var list = new List<HistoryRow>();
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT s.date, s.active_sec, s.idle_sec, s.locked_sec,
@@ -210,8 +233,7 @@ public sealed class UsageRepository
         GetAllAppUsage(string from, string to)
     {
         var list = new List<(string, string, string?, long, string, string)>();
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        using var conn = OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT date, process_name, window_title, duration_sec, started_at, ended_at
@@ -239,8 +261,7 @@ public sealed class UsageRepository
 
     public int PurgeOlderThan(string cutoffDate)
     {
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        using var conn = OpenConnection();
         int affected = 0;
         using (var cmd = conn.CreateCommand())
         {

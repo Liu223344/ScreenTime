@@ -72,6 +72,18 @@ public sealed class TrackingService : IHostedService, IDisposable
 
     private void OnTick(object? state)
     {
+        try
+        {
+            OnTickCore();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.LogError("TrackingService.OnTick 异常", ex);
+        }
+    }
+
+    private void OnTickCore()
+    {
         lock (_stateLock)
         {
             // 锁屏期间不采样(锁屏时长由 SessionSwitch 事件在解锁时一次性结算)
@@ -140,6 +152,18 @@ public sealed class TrackingService : IHostedService, IDisposable
 
     private void OnSessionStateChanged(SessionService.SessionState state)
     {
+        try
+        {
+            OnSessionStateChangedCore(state);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.LogError("TrackingService.OnSessionStateChanged 异常", ex);
+        }
+    }
+
+    private void OnSessionStateChangedCore(SessionService.SessionState state)
+    {
         lock (_stateLock)
         {
             var now = DateTime.Now;
@@ -184,6 +208,7 @@ public sealed class TrackingService : IHostedService, IDisposable
     /// <summary>
     /// 把当前内存会话写入数据库。调用方需持有 _stateLock。
     /// 注意:本方法不重置 _sessionStart / _sessionSeconds,由调用方负责。
+    /// 若会话跨越午夜,在午夜处切分,分别记入两天的汇总。
     /// </summary>
     private void FlushCurrentSession()
     {
@@ -193,22 +218,53 @@ public sealed class TrackingService : IHostedService, IDisposable
         }
 
         DateTime end = _sessionStart.AddSeconds(_sessionSeconds);
-        string date = _sessionStart.ToString("yyyy-MM-dd");
-        string startedAt = _sessionStart.ToString("o");
+        DateTime midnight = _sessionStart.Date.AddDays(1);
+
+        if (end > midnight)
+        {
+            // 跨午夜:切分为两段,分别 flush 到前一天和今天
+            long firstPart = (long)(midnight - _sessionStart).TotalSeconds;
+            long secondPart = _sessionSeconds - firstPart;
+
+            if (firstPart > 0)
+            {
+                FlushSegment(_sessionStart, firstPart);
+            }
+            if (secondPart > 0)
+            {
+                FlushSegment(midnight, secondPart);
+            }
+        }
+        else
+        {
+            FlushSegment(_sessionStart, _sessionSeconds);
+        }
+    }
+
+    /// <summary>
+    /// 把一段不跨午夜的会话写入数据库。调用方需持有 _stateLock。
+    /// </summary>
+    private void FlushSegment(DateTime start, long seconds)
+    {
+        if (seconds <= 0) return;
+
+        DateTime end = start.AddSeconds(seconds);
+        string date = start.ToString("yyyy-MM-dd");
+        string startedAt = start.ToString("o");
         string endedAt = end.ToString("o");
 
         switch (_currentState)
         {
             case State.Active:
                 _repo.AddAppUsage(date, _currentProcess, _currentTitle,
-                                  _sessionSeconds, startedAt, endedAt);
-                _repo.UpsertDailySummary(date, activeDelta: _sessionSeconds, idleDelta: 0, lockedDelta: 0);
+                                  seconds, startedAt, endedAt);
+                _repo.UpsertDailySummary(date, activeDelta: seconds, idleDelta: 0, lockedDelta: 0);
                 break;
             case State.Idle:
-                _repo.UpsertDailySummary(date, activeDelta: 0, idleDelta: _sessionSeconds, lockedDelta: 0);
+                _repo.UpsertDailySummary(date, activeDelta: 0, idleDelta: seconds, lockedDelta: 0);
                 break;
             case State.Locked:
-                _repo.UpsertDailySummary(date, activeDelta: 0, idleDelta: 0, lockedDelta: _sessionSeconds);
+                _repo.UpsertDailySummary(date, activeDelta: 0, idleDelta: 0, lockedDelta: seconds);
                 break;
         }
     }
@@ -241,6 +297,7 @@ public sealed class TrackingService : IHostedService, IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer?.Dispose();
+        _session.StateChanged -= OnSessionStateChanged;
         _session.Dispose();
     }
 }

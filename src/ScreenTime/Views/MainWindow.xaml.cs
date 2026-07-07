@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using ScreenTime.Services;
 using ScreenTime.ViewModels;
 
 namespace ScreenTime.Views;
@@ -42,12 +43,15 @@ public partial class MainWindow : Window
 
     private void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
     {
+        // 首次加载数据(异步,不阻塞窗口显示)
+        _ = _viewModel.RefreshAsync();
+
         // 每 30 秒自动刷新今日数据
         _refreshTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(30),
         };
-        _refreshTimer.Tick += (_, _) => _viewModel.Refresh();
+        _refreshTimer.Tick += async (_, _) => await _viewModel.RefreshAsync();
         _refreshTimer.Start();
     }
 
@@ -67,7 +71,7 @@ public partial class MainWindow : Window
         }
 
         try { DragMove(); }
-        catch { /* DragMove 在非按下状态调用会抛异常,忽略 */ }
+        catch (Exception ex) { AppLogger.Instance.LogWarning("DragMove 异常", ex); }
     }
 
     /// <summary>

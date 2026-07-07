@@ -119,45 +119,58 @@ public sealed class MainViewModel : ViewModelBase
         _reminder = reminder;
         _autoStart = autoStart;
 
-        RefreshCommand = new RelayCommand(Refresh);
+        RefreshCommand = new RelayCommand(async () => await RefreshAsync());
         SaveSettingsCommand = new RelayCommand(SaveSettings);
         PurgeNowCommand = new RelayCommand(PurgeNow);
         ExportCsvCommand = new RelayCommand(ExportCsv);
 
         LoadSettingsIntoFields();
-        Refresh();
+        // 不在构造函数中触发 Refresh,改为在 MainWindow.OnLoaded 中异步调用,
+        // 避免 DI 解析阶段同步执行 5+ 次 DB 查询阻塞启动。
     }
 
     // ---------- 数据刷新 ----------
 
     /// <summary>
-    /// 从数据库重新加载今日 + 历史 + 图表。可在 UI 线程调用。
+    /// 从数据库重新加载今日 + 历史 + 图表。DB 查询在 ThreadPool 线程执行,
+    /// 图表构建与属性更新切回 UI 线程,避免阻塞界面。
     /// </summary>
-    public void Refresh()
+    public async Task RefreshAsync()
     {
         string today = DateTime.Today.ToString("yyyy-MM-dd");
+        string from = DateTime.Today.AddDays(-6).ToString("yyyy-MM-dd");
 
-        var summary = _repo.GetTodaySummary(today);
+        // 在后台线程执行所有 DB 查询
+        var (summary, hourly, topApps, historyRows) = await Task.Run(() =>
+        {
+            var s = _repo.GetTodaySummary(today);
+            var h = _repo.GetHourlyActive(today);
+            var t = _repo.GetTopApps(today, 5);
+            var r = _repo.GetDailyHistory(from, today);
+            return (s, h, t, r);
+        });
+
+        // 切回 UI 线程更新绑定属性与构建图表
         TodayActiveSeconds = summary.ActiveSeconds;
         TodayActiveDisplay = FormatDuration(summary.ActiveSeconds);
         TodayIdleDisplay = FormatDuration(summary.IdleSeconds);
         TodayLockedDisplay = FormatDuration(summary.LockedSeconds);
         TodayActiveRatioDisplay = (summary.ActiveRatio * 100).ToString("0") + "%";
 
-        HourlyChart = BuildHourlyChart(today);
-        TopAppsChart = BuildTopAppsChart(today);
+        HourlyChart = BuildHourlyChart(hourly);
+        TopAppsChart = BuildTopAppsChart(topApps);
 
-        LoadHistory();
+        HistoryRows.Clear();
+        foreach (var r in historyRows) HistoryRows.Add(r);
         HistoryChart = BuildHistoryChart();
     }
 
-    private void LoadHistory()
+    /// <summary>
+    /// 同步刷新(兼容旧调用方,内部调用异步版本)。
+    /// </summary>
+    public void Refresh()
     {
-        string to = DateTime.Today.ToString("yyyy-MM-dd");
-        string from = DateTime.Today.AddDays(-6).ToString("yyyy-MM-dd");
-        var rows = _repo.GetDailyHistory(from, to);
-        HistoryRows.Clear();
-        foreach (var r in rows) HistoryRows.Add(r);
+        RefreshAsync().GetAwaiter().GetResult();
     }
 
     // ---------- 设置 ----------
@@ -314,10 +327,8 @@ public sealed class MainViewModel : ViewModelBase
         return axis;
     }
 
-    private PlotModel BuildHourlyChart(string date)
+    private PlotModel BuildHourlyChart(List<HourlyActivePoint> hourly)
     {
-        var hourly = _repo.GetHourlyActive(date);
-
         var model = new PlotModel { Title = null };
         ApplyAppleTheme(model);
 
@@ -350,9 +361,8 @@ public sealed class MainViewModel : ViewModelBase
         return model;
     }
 
-    private PlotModel BuildTopAppsChart(string date)
+    private PlotModel BuildTopAppsChart(List<AppUsageRecord> top)
     {
-        var top = _repo.GetTopApps(date, 5);
         // Apple 调色板,顺序应用
         var palette = new[] { AppleBlue, AppleTeal, AppleGreen, AppleOrange, ApplePink, ApplePurple };
 
